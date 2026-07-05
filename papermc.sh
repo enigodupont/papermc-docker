@@ -3,45 +3,42 @@
 # Enter server directory
 cd papermc || exit
 
-# Get version information and build download URL and jar name
-URL=https://fill.papermc.io/v3/projects/paper
-if [ "${MC_VERSION}" = latest ]
-then
-  # Get the latest MC version
-  MC_VERSION=$(wget -qO - $URL | jq -r '.versions[-1]') # "-r" is needed because the output has quotes otherwise
+BASE_URL="https://fill.papermc.io/v3/projects/paper"
+
+# If no version is provided (or "latest"), use the latest Minecraft version
+if [ -z "${MC_VERSION}" ] || [ "${MC_VERSION}" = "latest" ]; then
+    MC_VERSION=$(wget -qO - "${BASE_URL}" | jq -r '.versions[-1]')
 fi
-URL=${URL}/versions/${MC_VERSION}
-if [ "${PAPER_BUILD}" = latest ]
-then
-  # Get the latest build
-  PAPER_BUILD=$(wget -qO - "$URL" | jq '.builds[-1]')
+
+# Get the latest build for the selected Minecraft version unless explicitly set
+VERSION_URL="${BASE_URL}/versions/${MC_VERSION}"
+
+if [ -z "${PAPER_BUILD}" ] || [ "${PAPER_BUILD}" = "latest" ]; then
+    PAPER_BUILD=$(wget -qO - "${VERSION_URL}" | jq -r '.builds[-1]')
 fi
+
 JAR_NAME="paper-${MC_VERSION}-${PAPER_BUILD}.jar"
-URL="${URL}/builds/${PAPER_BUILD}/downloads/${JAR_NAME}"
+DOWNLOAD_URL="${VERSION_URL}/builds/${PAPER_BUILD}/download"
 
-# Update if necessary
-if [ ! -e "${JAR_NAME}" ]
-then
-  # Remove old server jar(s)
-  rm -f -- *.jar
-  # Download new server jar
-  wget "${URL}" -O "${JAR_NAME}"
-  
-  # If this is the first run, accept the EULA
-  if [ ! -e eula.txt ]
-  then
-    # Run the server once to generate eula.txt
-    java -jar "${JAR_NAME}"
-    # Edit eula.txt to accept the EULA
-    sed -i 's/false/true/g' eula.txt
-  fi
+# Download/update if necessary
+if [ ! -f "${JAR_NAME}" ]; then
+    # Remove any old Paper jars
+    rm -f -- *.jar
+
+    echo "Downloading Paper ${MC_VERSION} build ${PAPER_BUILD}..."
+    wget -O "${JAR_NAME}" "${DOWNLOAD_URL}" || exit 1
+
+    # Accept the EULA on first run
+    if [ ! -f eula.txt ]; then
+        java -jar "${JAR_NAME}"
+        sed -i 's/^eula=false$/eula=true/' eula.txt
+    fi
 fi
 
-# Add RAM options to Java options if necessary
-if [ -n "${MC_RAM}" ]
-then
-  JAVA_OPTS="-Xms${MC_RAM} -Xmx${MC_RAM} ${JAVA_OPTS}"
+# Add RAM options if configured
+if [ -n "${MC_RAM}" ]; then
+    JAVA_OPTS="-Xms${MC_RAM} -Xmx${MC_RAM} ${JAVA_OPTS}"
 fi
 
-# Start server
+# Start the server
 exec java -server ${JAVA_OPTS} -jar "${JAR_NAME}" nogui
